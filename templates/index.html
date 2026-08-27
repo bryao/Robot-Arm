@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tailscale Camera Stream</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #121212; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .video-container { border: 2px solid #333; border-radius: 8px; overflow: hidden; background: #000; }
+        img { display: block; max-width: 100%; height: auto; }
+        .controls { margin-top: 15px; display: flex; gap: 15px; }
+        button { background: #007acc; color: white; border: none; padding: 12px 24px; font-size: 18px; border-radius: 6px; cursor: pointer; }
+        button:hover { background: #005999; }
+    </style>
+</head>
+<body>
+    <h2>Live Camera Feed</h2>
+    <div class="video-container">
+        <img id="camera-feed" src="" alt="Connecting to stream...">
+    </div>
+        
+    <div class="controls">
+        <button onclick="sendPan('left')">&#8592; Left</button>
+        <button onclick="sendPan('right')">Right &#8594;</button>
+    </div>
+
+    <script>
+        const socket = io();
+        const imgElement = document.getElementById('camera-feed');
+
+        socket.on('frame', (data) => {
+            imgElement.src = 'data:image/jpeg;base64,' + data.data;
+        });
+
+        socket.on('connect', () => {
+            console.log('Connected to Tailscale camera stream');
+        });
+
+        function sendPan(dir) {
+            socket.emit('pan', { direction: dir });
+        }
+    </script>
+</body>
+</html>

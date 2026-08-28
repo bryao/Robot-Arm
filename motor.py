@@ -8,10 +8,12 @@ class BaseMotorController(abc.ABC):
         self.max_angle = max_angle
 
     def turn_left(self):
-        self.set_angle(self.angle - self.step_size)
+        # self.set_angle(self.angle - self.step_size)
+        self.turn_left()
 
     def turn_right(self):
-        self.set_angle(self.angle + self.step_size)
+        # self.set_angle(self.angle + self.step_size)
+        self.turn_right()
 
     @abc.abstractmethod
     def set_angle(self, angle: int):

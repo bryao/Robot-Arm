@@ -60,12 +60,24 @@ class MKSServo42DCANController(BaseMotorController):
         
         # Command: 0x82 (Set mode), 0x05 (Bus FOC Mode)
         # Broadcast setting (ID 0x00) -> CAN ID: 000, Data: [0x82, 0x05], Checksum: 0x87
-        self._send_cmd(0x00, [0x82, 0x05])
+        self._send_cmd(0x01, [0x82, 0x05])
         time.sleep(0.05)
 
-        print(f"[CAN] Broadcast ebales multi-motor synchronous control function")
-        self._send_cmd(0x00, [0x4A, 0x01])
-        time.sleep(0.05)
+        # self._send_cmd(0x01, [0xF3, 0x01])
+        # time.sleep(0.05)
+
+        # print(f"[CAN] Broadcast ebales multi-motor synchronous control function")
+        # self._send_cmd(0x00, [0x4A, 0x01])
+        # time.sleep(0.05)
+
+    def turn_left(self):
+        self._send_cmd(0x01, [0xF4, 0x01, 0x2C, 0x02, 0xFD, 0x80, 0x00])
+        # self._send_cmd(0x01, [0xF4, 0x01])
+        # self._send_cmd(0x01, [0x4B])
+
+    def turn_right(self):
+        self._send_cmd(0x01, [0xF4, 0x01, 0x2C, 0x02, 0x02, 0x80, 0x00])
+        # self._send_cmd(0x01, [0x4B])
 
     def set_angle(self, target_angle: int):
         # """Hardware implementation of the abstract set_angle method."""

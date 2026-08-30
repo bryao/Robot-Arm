@@ -7,13 +7,14 @@ class MKSServo42DCANController(BaseMotorController):
     CAN Bus driver for NEMA 17 with MKS Servo42D.
     Inherits step tracking and angle limits from BaseMotorController.
     """
-    def __init__(self, channel='can0', bitrate=500000, motor_id=0x01, step_size=10, min_angle=0, max_angle=180, **kwargs):
+    def __init__(self, channel='can0', bitrate=500000,gear_ratio=50.0, motor_id=0x01, step_size=10, min_angle=0, max_angle=180, **kwargs):
         # 1. Initialize parent BaseMotorController attributes (self.angle, self.step_size, etc.)
         super().__init__(step_size=step_size, min_angle=min_angle, max_angle=max_angle, **kwargs)
         
         self.motor_id = motor_id
         self.channel = channel
         self.bitrate = bitrate
+        self.gear_ratio = gear_ratio  # 1:50 Gearbox multiplier
         
         # 2. Connect to SocketCAN interface (MKS CANable v2.0)
         try:
@@ -70,49 +71,58 @@ class MKSServo42DCANController(BaseMotorController):
         # self._send_cmd(0x00, [0x4A, 0x01])
         # time.sleep(0.05)
 
-    def turn_left(self):
-        self._send_cmd(0x01, [0xF4, 0x01, 0x2C, 0x02, 0xFD, 0x80, 0x00])
-        # self._send_cmd(0x01, [0xF4, 0x01])
-        # self._send_cmd(0x01, [0x4B])
+    # def turn_left(self):
+    #     self._send_cmd(0x01, [0xF4, 0x01, 0x2C, 0x02, 0xFD, 0x80, 0x00])
+    #     # self._send_cmd(0x01, [0xF4, 0x01])
+    #     # self._send_cmd(0x01, [0x4B])
 
-    def turn_right(self):
-        self._send_cmd(0x01, [0xF4, 0x01, 0x2C, 0x02, 0x02, 0x80, 0x00])
-        # self._send_cmd(0x01, [0x4B])
+    # def turn_right(self):
+    #     self._send_cmd(0x01, [0xF4, 0x01, 0x2C, 0x02, 0x02, 0x80, 0x00])
+    #     # self._send_cmd(0x01, [0x4B])
 
     def set_angle(self, target_angle: int):
-        # """Hardware implementation of the abstract set_angle method."""
-        # # Clamp angle between min_angle and max_angle
-        # target_angle = max(self.min_angle, min(self.max_angle, target_angle))
-        # angle_diff = target_angle - self.angle
+        target_angle = max(self.min_angle, min(self.max_angle, target_angle))
+        angle_diff = target_angle - self.angle
+
+        print(f"target angle:{target_angle}")
         
-        # if angle_diff == 0:
-        #     return
+        if angle_diff == 0:
+            return
 
-        # # Direction flag: 0x00 for Clockwise (right), 0x80 for Counter-Clockwise (left)
-        # direction_flag = 0x00 if angle_diff > 0 else 0x80
-        # speed_rpm = 64  # Speed parameter (~100 RPM in hex: 0x64)
-        # accel = 0x02    # Acceleration parameter
+        # 1. Direction Bit (b7 of Byte 2): 0x80 if negative, 0x00 if positive
+        dir_bit = 0x80 if angle_diff > 0 else 0x00
 
-        # # Convert degree difference into step pulses (assuming 3200 steps/rev)
-        # pulses = int(abs(angle_diff) * (3200 / 360))
+        # 2. Speed (12-bit value: 0 to 3000 RPM)
+        # Example: 320 RPM -> Hex 0x140 (Byte2 speed portion = 0x1, Byte3 = 0x40)
+        speed_rpm = 320  
+        speed_high = (speed_rpm >> 8) & 0x0F  # Bits 11-8 -> fits in b3-b0
+        speed_low = speed_rpm & 0xFF          # Bits 7-0  -> Byte 3
+
+        # Combine Direction bit (b7) and High Speed bits (b3-b0) for Byte 2
+        byte2 = dir_bit | speed_high
+        byte3 = speed_low
+        byte4_acc = 0x02  # Acceleration (0-255)
+
+        # 3. Pulses (3-byte field / Bytes 5-7: 0 to 0xFFFFFF)
+        motor_degrees = abs(angle_diff) * self.gear_ratio
+        pulses = int(motor_degrees * (3200 / 360))  # Assuming 16 microsteps (3200 PPR)
+
+        relpulses_bytes = [
+            (pulses >> 16) & 0xFF,
+            (pulses >> 8) & 0xFF,
+            pulses & 0xFF
+        ]
+
+        # Assemble full 7-byte command (Checksum is automatically appended by _send_cmd)
+        # Payload: [Code(FD), Byte2, Byte3, Byte4, Byte5, Byte6, Byte7]
+        cmd_payload = [0xFD, byte2, byte3, byte4_acc] + relpulses_bytes
         
-        # # Split 32-bit pulse integer into 4 byte array
-        # p_bytes = [
-        #     (pulses >> 24) & 0xFF,
-        #     (pulses >> 16) & 0xFF,
-        #     (pulses >> 8) & 0xFF,
-        #     pulses & 0xFF
-        # ]
+        self._send_cmd(self.motor_id, cmd_payload)
+        self.angle = target_angle
+        print(f"[CAN Motor] Sent: FD {byte2:02X} {byte3:02X} {byte4_acc:02X} ... (Pulses: {pulses})")
 
-        # # Command 0xFD: Relative Pulse Movement
-        # cmd_payload = [0xFD, direction_flag | speed_rpm, accel] + p_bytes
-        
-        # self._send_cmd(self.motor_id, cmd_payload)
-        # self.angle = target_angle
-        # print(f"[CAN Motor] Moved to angle: {self.angle}° (Diff: {angle_diff}°)")
-
-        self._send_cmd(0x01, [0xF6, 0x02, 0x80, 0x02])
-        self._send_cmd(0x00, [0x4B])
+        # self._send_cmd(0x01, [0xF6, 0x02, 0x80, 0x02])
+        # self._send_cmd(0x00, [0x4B])
 
 
     def close(self):

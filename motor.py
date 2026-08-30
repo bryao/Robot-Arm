@@ -8,16 +8,20 @@ class BaseMotorController(abc.ABC):
         self.max_angle = max_angle
 
     def turn_left(self):
-        # self.set_angle(self.angle - self.step_size)
-        self.turn_left()
+        self.set_angle(self.angle - self.step_size)
+    #     self.turn_left()
 
     def turn_right(self):
-        # self.set_angle(self.angle + self.step_size)
-        self.turn_right()
+        self.set_angle(self.angle + self.step_size)
+    #     self.turn_right()
 
     @abc.abstractmethod
     def set_angle(self, angle: int):
         """Hardware implementation to move motor to target angle."""
+        pass
+
+    def return_home(self):
+        """Hardware implementation to move motor to target back to home position"""
         pass
 
 class MockMotorController(BaseMotorController):

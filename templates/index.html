@@ -5,10 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tailscale Camera Stream</title>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <link rel="shortcut icon" href="#">
     <style>
-        body { font-family: Arial, sans-serif; background-color: #121212; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        body { font-family: Arial, sans-serif; background-color: #121212; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        .main-layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
         .video-container { border: 2px solid #333; border-radius: 8px; overflow: hidden; background: #000; cursor: pointer; }
         img { display: block; max-width: 100%; height: auto; }
+        .graph-container { background: #1e1e1e; border: 2px solid #333; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        canvas { background: #000; border: 1px solid #444; border-radius: 4px; }
+        .coords-label { margin-top: 10px; font-family: monospace; font-size: 16px; color: #00ffcc; }
         .controls { margin-top: 15px; display: flex; gap: 15px; }
         button { background: #007acc; color: white; border: none; padding: 12px 24px; font-size: 18px; border-radius: 6px; cursor: pointer; }
         button:hover { background: #005999; }
@@ -17,8 +22,16 @@
 <body>
     <h2>Live Camera Feed</h2>
     <p>Click the video feed to lock mouse control (Press ESC to unlock)</p>
-    <div class="video-container" id="video-container">
-        <img id="camera-feed" src="" alt="Connecting to stream...">
+    
+    <div class="main-layout">
+        <div class="video-container" id="video-container">
+            <img id="camera-feed" src="" alt="Connecting to stream...">
+        </div>
+
+        <div class="graph-container">
+            <canvas id="coord-graph" width="200" height="200"></canvas>
+            <div class="coords-label" id="coords-display">X: 0 | Y: 0</div>
+        </div>
     </div>
     
     <div class="controls">
@@ -30,6 +43,19 @@
         const socket = io();
         const imgElement = document.getElementById('camera-feed');
         const container = document.getElementById('video-container');
+        const canvas = document.getElementById('coord-graph');
+        const ctx = canvas.getContext('2d');
+        const coordsDisplay = document.getElementById('coords-display');
+
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const maxRange = 100; // Total pixel boundaries for virtual space
+
+        // Track total accumulated position
+        let posX = 0;
+        let posY = 0;
+
+        drawGraph(posX, posY);
 
         socket.on('frame', (data) => {
             imgElement.src = 'data:image/jpeg;base64,' + data.data;
@@ -39,47 +65,71 @@
             socket.emit('pan', { direction: dir });
         }
 
-        // --- Pointer Lock & Controls Implementation --- //
+        function drawGraph(x, y) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 1. Request pointer lock on clicking the video container
+            // Draw grid axes
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height);
+            ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY);
+            ctx.stroke();
+
+            // Map accumulated coordinates to canvas dimensions
+            const targetX = centerX + Math.max(-maxRange, Math.min(maxRange, x)) * (centerX / maxRange);
+            const targetY = centerY + Math.max(-maxRange, Math.min(maxRange, y)) * (centerY / maxRange);
+
+            // Draw line from center to accumulated point
+            ctx.strokeStyle = 'rgba(0, 255, 204, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(targetX, targetY);
+            ctx.stroke();
+
+            // Draw current position indicator
+            ctx.fillStyle = '#00ffcc';
+            ctx.beginPath();
+            ctx.arc(targetX, targetY, 5, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+
         container.addEventListener('click', () => {
             container.requestPointerLock();
         });
 
-        // 2. Handle state changes when locked or unlocked
         document.addEventListener('pointerlockchange', () => {
             if (document.pointerLockElement === container) {
-                console.log('Pointer locked');
                 document.addEventListener('mousemove', handleMouseMove);
                 document.addEventListener('keydown', handleKeyDown);
             } else {
-                console.log('Pointer unlocked');
                 document.removeEventListener('mousemove', handleMouseMove);
                 document.removeEventListener('keydown', handleKeyDown);
+                // REMOVED: drawGraph(0, 0) call so it no longer resets on unlock
             }
         });
 
-        // 3. Track relative mouse movement X and Y
         function handleMouseMove(e) {
             const movementX = e.movementX || 0;
             const movementY = e.movementY || 0;
-
+            
             console.log(`Mouse Deltas -> X: ${movementX}, Y: ${movementY}`);
+            // Accumulate position so it stays where you left it
+            posX += movementX;
+            posY += movementY;
 
-            // Emit mouse movements to backend if desired
-            // socket.emit('motor_move', { x: movementX, y: movementY });
+            // Clamp coordinates within range
+            posX = Math.max(-maxRange, Math.min(maxRange, posX));
+            posY = Math.max(-maxRange, Math.min(maxRange, posY));
+
+            drawGraph(posX, posY);
+            coordsDisplay.innerText = `X: ${posX} | Y: ${-posY}`;
+            socket.emit('motor_move', { x: posX, y: -posY });
         }
 
-        // 4. Track keyboard input while locked
         function handleKeyDown(e) {
-            console.log(`Key Pressed: ${e.key} (Code: ${e.code})`);
-
-            // Example: WASD or Arrow controls via keyboard
-            if (['KeyW', 'ArrowUp'].includes(e.code)) {
-                socket.emit('pan', { direction: 'up' });
-            } else if (['KeyS', 'ArrowDown'].includes(e.code)) {
-                socket.emit('pan', { direction: 'down' });
-            } else if (['KeyA', 'ArrowLeft'].includes(e.code)) {
+            if (['KeyA', 'ArrowLeft'].includes(e.code)) {
                 socket.emit('pan', { direction: 'left' });
             } else if (['KeyD', 'ArrowRight'].includes(e.code)) {
                 socket.emit('pan', { direction: 'right' });

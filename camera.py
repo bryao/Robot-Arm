@@ -4,6 +4,7 @@ from canStepper import MKSServo42DCANController
 import cv2
 import base64
 import time
+import numpy as np
 
 app = Flask(__name__)
 # Removed async_mode='eventlet' so Flask-SocketIO uses standard threading
@@ -36,6 +37,11 @@ def background_thread():
         
         socketio.emit('frame', {'data': jpg_as_text})
 
+def cart2pol(x, y):
+    r = np.sqrt((x * x) + (y * y))
+    theta = np.arctan2(y, x) * 180 / np.pi
+    return r, theta
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -56,6 +62,22 @@ def handle_pan(data):
     elif direction == 'right':
         print('turning right')
         motor.turn_right()
+
+@socketio.on('motor_move')
+def hand_mouse_cords(cords):
+
+    if not isinstance(cords, dict):
+        return
+
+    x = cords.get('x', 0)
+    y = cords.get('y', 0)
+
+    if x == 0 and y == 0:
+        return
+
+    r, theta = cart2pol(x,y)
+    print(f"theta:{theta}")
+
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5001, debug=False)
